@@ -18,7 +18,6 @@ struct RewardClaimer {
 contract BearNFTS is Ownable, ERC721A {
     uint256 public constant COLLECTION_SIZE = 10000;
 
-    // // metadata URI
     string private _baseTokenURI;
 
     function _baseURI() internal view virtual override returns (string memory) {
@@ -151,7 +150,7 @@ contract BearNFTS is Ownable, ERC721A {
 
     function toggleHibernation(uint256 tokenId) internal {
         require(
-            ownershipOf(tokenId).addr == _msgSender(),
+            ownershipOf(tokenId) == _msgSender(),
             "ERC721ACommon: Not owner"
         );
         uint256 start = hibernationStarted[tokenId];

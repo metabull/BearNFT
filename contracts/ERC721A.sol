@@ -15,9 +15,9 @@ import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
  * @dev Implementation of https://eips.ethereum.org/EIPS/eip-721[ERC721] Non-Fungible Token Standard, including
  * the Metadata and Enumerable extension. Built to optimize for lower gas during batch mints.
  *
- * Assumes serials are sequentially minted starting at 0 (e.g. 0, 1, 2, 3..).
+ * Assumes Token Will be minted Randomly
  *
- * Assumes the number of issuable tokens (collection size) is capped and fits in a uint128.
+ * Assumes the number of issuable tokens (collection size) is capped and fits in a uint256.
  *
  * Does not support burning tokens to address(0).
  */
@@ -31,16 +31,6 @@ contract ERC721A is
     using Address for address;
     using Strings for uint256;
 
-    struct TokenOwnership {
-        address addr;
-        uint64 startTimestamp;
-    }
-
-    struct AddressData {
-        uint128 balance;
-        uint128 numberMinted;
-    }
-
     uint256 private currentIndex = 0;
 
     uint256 internal immutable collectionSize;
@@ -52,8 +42,7 @@ contract ERC721A is
     string private _symbol;
 
     // Mapping from token ID to ownership details
-    // An empty struct value does not necessarily mean the token is unowned. See ownershipOf implementation for details.
-    mapping(uint256 => TokenOwnership) private _ownerships;
+    mapping(uint256 => address) private _ownerships;
 
     // Mapping owner address to address data
     mapping(address => uint256) private balances;
@@ -66,7 +55,6 @@ contract ERC721A is
 
     /**
      * @dev
-     * `maxBatchSize` refers to how much a minter can mint at a time.
      * `collectionSize_` refers to how many tokens are in the collection.
      */
     constructor(
@@ -86,7 +74,7 @@ contract ERC721A is
     /**
      * @dev See {IERC721Enumerable-totalSupply}.
      */
-    function totalSupply() public view override returns (uint256) {
+    function totalSupply() external view override returns (uint256) {
         return currentIndex;
     }
 
@@ -95,7 +83,7 @@ contract ERC721A is
      * with tokenId. We are limiting till collectionSize
      */
     function tokenByIndex(uint256 index)
-        public
+        external
         view
         override
         returns (uint256)
@@ -110,18 +98,18 @@ contract ERC721A is
      * It may also degrade with extremely large collection sizes (e.g >> 10000), test for your use case.
      */
     function tokenOfOwnerByIndex(address owner, uint256 index)
-        public
+        external
         view
         override
         returns (uint256)
     {
-        require(index < balanceOf(owner), "ERC721A: owner index out of bounds");
+        require(index < balances[owner], "ERC721A: owner index out of bounds");
         uint256 tokenIdsIdx = 0;
         address currOwnershipAddr = address(0);
         for (uint256 i = 0; i <= collectionSize; i++) {
-            TokenOwnership memory ownership = _ownerships[i];
-            if (ownership.addr != address(0)) {
-                currOwnershipAddr = ownership.addr;
+            address ownership = _ownerships[i];
+            if (ownership != address(0)) {
+                currOwnershipAddr = ownership;
             }
             if (currOwnershipAddr == owner) {
                 if (tokenIdsIdx == index) {
@@ -154,18 +142,18 @@ contract ERC721A is
     /**
      * @dev See {IERC721-balanceOf}.
      */
-    function balanceOf(address owner) public view override returns (uint256) {
+    function balanceOf(address owner) external view override returns (uint256) {
         require(
             owner != address(0),
             "ERC721A: balance query for the zero address"
         );
-        return uint256(balances[owner]);
+        return balances[owner];
     }
 
     function ownershipOf(uint256 tokenId)
         internal
         view
-        returns (TokenOwnership memory)
+        returns (address)
     {
         require(_exists(tokenId), "ERC721A: owner query for nonexistent token");
         return _ownerships[tokenId];
@@ -175,20 +163,20 @@ contract ERC721A is
      * @dev See {IERC721-ownerOf}.
      */
     function ownerOf(uint256 tokenId) public view override returns (address) {
-        return ownershipOf(tokenId).addr;
+        return ownershipOf(tokenId);
     }
 
     /**
      * @dev See {IERC721Metadata-name}.
      */
-    function name() public view virtual override returns (string memory) {
+    function name() external view virtual override returns (string memory) {
         return _name;
     }
 
     /**
      * @dev See {IERC721Metadata-symbol}.
      */
-    function symbol() public view virtual override returns (string memory) {
+    function symbol() external view virtual override returns (string memory) {
         return _symbol;
     }
 
@@ -196,7 +184,7 @@ contract ERC721A is
      * @dev See {IERC721Metadata-tokenURI}.
      */
     function tokenURI(uint256 tokenId)
-        public
+        external
         view
         virtual
         override
@@ -226,7 +214,7 @@ contract ERC721A is
     /**
      * @dev See {IERC721-approve}.
      */
-    function approve(address to, uint256 tokenId) public override {
+    function approve(address to, uint256 tokenId) external override {
         address owner = ERC721A.ownerOf(tokenId);
         require(to != owner, "ERC721A: approval to current owner");
 
@@ -259,7 +247,7 @@ contract ERC721A is
      * @dev See {IERC721-setApprovalForAll}.
      */
     function setApprovalForAll(address operator, bool approved)
-        public
+        external
         override
     {
         require(operator != _msgSender(), "ERC721A: approve to caller");
@@ -299,7 +287,7 @@ contract ERC721A is
         address from,
         address to,
         uint256 tokenId
-    ) public override {
+    ) external override {
         safeTransferFrom(from, to, tokenId, "");
     }
 
@@ -327,7 +315,7 @@ contract ERC721A is
      * Tokens start existing when they are minted (`_mint`),
      */
     function _exists(uint256 tokenId) internal view returns (bool) {
-        return _ownerships[tokenId].addr != address(0);
+        return _ownerships[tokenId] != address(0);
     }
 
     function _safeMint(address to, uint256[] memory tokenIds) internal {
@@ -352,10 +340,8 @@ contract ERC721A is
                 _checkOnERC721Received(address(0), to, tokenIds[i], _data),
                 "ERC721A: transfer to non ERC721Receiver implementer"
             );
-            _ownerships[tokenIds[i]] = TokenOwnership(
-                to,
-                uint64(block.timestamp)
-            );
+            require(!_exists(tokenIds[i]), "ERC721: token already minted");
+            _ownerships[tokenIds[i]] = to;
         }
         _afterTokenTransfers(address(0), to, tokenIds[0], tokenIds.length);
     }
@@ -375,11 +361,11 @@ contract ERC721A is
         address to,
         uint256 tokenId
     ) private {
-        TokenOwnership memory prevOwnership = ownershipOf(tokenId);
+        address prevOwnership = ownershipOf(tokenId);
 
-        bool isApprovedOrOwner = (_msgSender() == prevOwnership.addr ||
+        bool isApprovedOrOwner = (_msgSender() == prevOwnership ||
             getApproved(tokenId) == _msgSender() ||
-            isApprovedForAll(prevOwnership.addr, _msgSender()));
+            isApprovedForAll(prevOwnership, _msgSender()));
 
         require(
             isApprovedOrOwner,
@@ -387,7 +373,7 @@ contract ERC721A is
         );
 
         require(
-            prevOwnership.addr == from,
+            prevOwnership == from,
             "ERC721A: transfer from incorrect owner"
         );
         require(to != address(0), "ERC721A: transfer to the zero address");
@@ -395,24 +381,12 @@ contract ERC721A is
         _beforeTokenTransfers(from, to, tokenId, 1);
 
         // Clear approvals from the previous owner
-        _approve(address(0), tokenId, prevOwnership.addr);
+        _approve(address(0), tokenId, prevOwnership);
 
         balances[from] -= 1;
         balances[to] += 1;
 
-        _ownerships[tokenId] = TokenOwnership(to, uint64(block.timestamp));
-
-        // If the ownership slot of tokenId+1 is not explicitly set, that means the transfer initiator owns it.
-        // Set the slot of tokenId+1 explicitly in storage to maintain correctness for ownerOf(tokenId+1) calls.
-        uint256 nextTokenId = tokenId + 1;
-        if (_ownerships[nextTokenId].addr == address(0)) {
-            if (_exists(nextTokenId)) {
-                _ownerships[nextTokenId] = TokenOwnership(
-                    prevOwnership.addr,
-                    prevOwnership.startTimestamp
-                );
-            }
-        }
+        _ownerships[tokenId] = to;
 
         emit Transfer(from, to, tokenId);
         _afterTokenTransfers(from, to, tokenId, 1);
